@@ -203,6 +203,9 @@ class NexusBrain(Star):
             # 桌宠还可以发消息（Layer 2 快捷输入，可选）
             await self._process_desktop_input(msg, ws)
 
+        elif msg_type == "update_config":
+            await self._handle_update_config(msg, ws)
+
         elif msg_type == "relay_message":
             # 卫星 Bot 转发消息
             await self._handle_satellite_message(msg, ws)
@@ -281,7 +284,57 @@ class NexusBrain(Star):
     # 配置持久化
     # ═══════════════════════════════════════════════════════════
 
-    async def _save_mini_position(self, msg: dict):
+    async def _handle_update_config(self, msg: dict, ws):
+        """桌面端个性化设置保存 → 写 config.yaml + 刷新 Brain。"""
+        char_cfg = msg.get("character", {})
+        mem_cfg = msg.get("memory", {})
+
+        if char_cfg:
+            new_name = char_cfg.get("name", "").strip()
+            if new_name and new_name != self.char_name:
+                self.char_name = new_name
+                self.config.setdefault("character", {})["name"] = new_name
+                self.brain.char_name = new_name
+                logger.info(f"角色名已更新: {new_name}")
+
+        if mem_cfg:
+            folder_path = mem_cfg.get("folder_path", "")
+            self.config.setdefault("memory", {})["folder_path"] = folder_path
+            if folder_path:
+                self.config["memory"]["enabled"] = True
+                self.brain._memory_enabled = True
+                self.brain._memory_folder = folder_path
+                notebook_name = f"{self.char_name}的小本本.md"
+                self.brain._memory_path = Path(self.brain._memory_folder) / notebook_name
+                # 重新加载长期记忆
+                self.brain._long_term_memory = self.brain._load_long_term_memory(
+                    self.brain._memory_path
+                )
+                self.brain._system_prompt = self.brain._build_system_prompt()
+                logger.info(
+                    f"记忆已启用: {self.brain._memory_path} "
+                    f"({len(self.brain._long_term_memory)} 字符)"
+                )
+            else:
+                self.config["memory"]["enabled"] = False
+                self.brain._memory_enabled = False
+                self.brain._memory_path = None
+                self.brain._long_term_memory = ""
+                logger.info("记忆已关闭")
+
+        # 持久化到 config.yaml
+        try:
+            with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
+                yaml.dump(
+                    self.config, f, allow_unicode=True,
+                    default_flow_style=False, sort_keys=False,
+                )
+            logger.info("config.yaml 已更新")
+        except OSError as e:
+            logger.warning(f"写入 config.yaml 失败: {e}")
+
+        # 回传更新后的配置给桌面端
+        await self.ws.send_config(ws)
         """持久化迷你悬浮窗位置到 config.yaml。"""
         try:
             x, y = msg.get("x"), msg.get("y")
