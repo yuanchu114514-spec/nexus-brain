@@ -1,0 +1,32 @@
+# ═══════════════════════════════════════════════════════════
+# Nexus 插件配置模板
+# 复制此文件为 config.yaml 以使用
+# ═══════════════════════════════════════════════════════════
+
+# ── 角色设定 ──
+character:
+  name: "Nexus"
+
+# ── 长期记忆（可选，默认关闭）──
+memory:
+  enabled: false
+  folder_path: ""
+
+# ── WebSocket 服务器 ──
+ws:
+  host: "127.0.0.1"
+  port: 8999
+  path: "/nexus"
+
+# ── 桌面端 ──
+desktop:
+  enabled: true
+
+# ── 迷你悬浮窗 ──
+mini_window:
+  x: null
+  y: null
+
+# ── 系统 ──
+system:
+  reconnect_interval: 3.0
