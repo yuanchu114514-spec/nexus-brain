@@ -219,7 +219,7 @@ class MiniWindow(QWidget):
         if self._memory_folder:
             folder = self._memory_folder
             memory = menu.addAction("📖 打开记忆文件夹")
-            memory.triggered.connect(lambda f=folder: os.startfile(f))
+            memory.triggered.connect(lambda f=folder: self._open_folder_safe(f))
 
         menu.addSeparator()
 
@@ -241,6 +241,17 @@ class MiniWindow(QWidget):
 
     def set_web_chat_url(self, url: str):
         self._web_chat_url = url
+
+    # ── helpers ──
+
+    @staticmethod
+    def _open_folder_safe(path: str):
+        """用资源管理器打开文件夹，路径无效时静默忽略。"""
+        if path and os.path.isdir(path):
+            try:
+                os.startfile(path)
+            except OSError:
+                pass  # 打开失败不崩溃
 
     # ── position persistence ──
 
