@@ -3,7 +3,7 @@
 Layer 1: MiniWindow (迷你头像, 默认常驻)
 Layer 2-3: 待 Phase 3 实现 (Live2D + 搭话气泡)
 
-由 neko_brain 插件通过 subprocess 启动，WS 接收配置。
+由 Nexus Brain 插件通过 subprocess 启动，WS 接收配置。
 """
 
 from __future__ import annotations
