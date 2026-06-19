@@ -58,19 +58,6 @@ mindmap
         CHECKPOINT 检查点
         EMERGENCY 紧急保存
         AI-MERGE 建议合并
-    (("🎭 Nexus_Desktop<br/>桌宠身体 🆕"))
-      [Phase A 灵魂注入]
-        Live2D Cubism 渲染
-        表演引擎 expression/motion
-        TTS GPT-SoVITS 语音
-      [Phase B 感官觉醒]
-        截屏采集 mss+Pillow
-        VLM Qwen2-VL 视觉
-        主动搭话引擎
-      [Phase C 打磨交付]
-        流式逐字显示
-        连接状态呼吸灯
-        打包开机启动
     (("🖥️ 桌面悬浮窗"))
       56×56 纯白四芒星 QPainter
       悬停旋转动画
@@ -242,25 +229,15 @@ v0.6.2  06-18  WS 重连 — 心跳 ping/pong + 指数退避
 v0.7.0  06-20  开源发布 — brain.py → brain/ 6模块拆分 + .gitignore 隐私修复
 ```
 
-```
-Nexus_brain  v0.1.0 → v0.7.0  ████████████████████ 100%
-Nexus_Desktop Phase A/B/C      ░░░░░░░░░░░░░░░░░░░░   0%
-─────────────────────────────────────────────────────────
-总体                            ████████████████░░░░  89%
-```
-
 ---
 
 ## 🔧 技术栈
 
 | 层次 | 选型 |
 |------|------|
-| 桌面客户端 | Python 3.11+ / PyQt5 |
-| Live2D | QWebEngineView + PixiJS + Cubism SDK |
+| 桌面悬浮窗 | Python 3.11+ / PyQt5 |
 | 消息中枢 | AstrBot v4.16+ |
 | LLM | DeepSeek V4 |
-| 视觉模型 | Qwen2-VL-7B-GGUF (可选) |
-| TTS | GPT-SoVITS (本地 HTTP API) |
 | 通信 | WebSocket JSON 帧 + 令牌握手 |
 | 记忆存储 | Markdown 文件 + session.json |
 
