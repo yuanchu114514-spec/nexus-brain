@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import os
-import webbrowser
 
 from PyQt5.QtWidgets import (
     QWidget,
@@ -34,6 +33,7 @@ class MiniWindow(QWidget):
     """Layer 1 迷你窗口 — 桌面边缘常驻，点击展开 Live2D 角色。"""
 
     clicked = pyqtSignal()
+    open_chat_requested = pyqtSignal()
     hide_requested = pyqtSignal()
     quit_requested = pyqtSignal()
     settings_requested = pyqtSignal()
@@ -209,7 +209,7 @@ class MiniWindow(QWidget):
         """)
 
         web_chat = menu.addAction("💬 打开 Web Chat")
-        web_chat.triggered.connect(lambda: webbrowser.open(self._web_chat_url))
+        web_chat.triggered.connect(self.open_chat_requested.emit)
 
         menu.addSeparator()
 

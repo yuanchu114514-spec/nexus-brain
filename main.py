@@ -335,6 +335,8 @@ class NexusBrain(Star):
 
         # 回传更新后的配置给桌面端
         await self.ws.send_config(ws)
+
+    async def _save_mini_position(self, msg: dict):
         """持久化迷你悬浮窗位置到 config.yaml。"""
         try:
             x, y = msg.get("x"), msg.get("y")

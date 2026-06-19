@@ -174,6 +174,11 @@ class NexusWSServer:
                     logger.warning(f"收到非法 JSON: {raw[:100]}")
                     continue
 
+                # 心跳响应：客户端发 ping → 服务端回 pong
+                if msg.get("type") == "ping":
+                    await self.send(ws, {"type": "pong"})
+                    continue
+
                 if self._handler:
                     await self._handler(msg, ws)
 

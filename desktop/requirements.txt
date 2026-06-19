@@ -1,0 +1,7 @@
+PyQt5>=5.15.9
+PyQtWebEngine>=5.15.6
+websockets>=12.0
+mss>=9.0
+httpx>=0.25
+PyYAML>=6.0
+Pillow>=9.0

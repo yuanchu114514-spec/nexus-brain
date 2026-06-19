@@ -9,10 +9,14 @@ Layer 2-3: 待 Phase 3 实现 (Live2D + 搭话气泡)
 from __future__ import annotations
 
 import argparse
+import ctypes
 import logging
 import math
+import os
+import subprocess
 import sys
 import webbrowser
+from ctypes import wintypes
 from pathlib import Path
 
 # ── 日志配置 ──
@@ -25,7 +29,7 @@ logging.basicConfig(
 
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction
 from PyQt5.QtGui import QIcon, QPixmap, QPainter, QPainterPath, QColor, QFont
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 
 # 确保能导入同目录模块
 _THIS_DIR = Path(__file__).resolve().parent
@@ -75,6 +79,86 @@ def _make_tray_icon() -> QIcon:
     return QIcon(pm)
 
 
+def _find_launcher_exe() -> str | None:
+    """定位 astrbot-launcher.exe 路径（从运行中进程获取，或检查默认安装位置）。"""
+    # 策略 A：从运行中的进程获取完整路径
+    kernel32 = ctypes.windll.kernel32
+
+    TH32CS_SNAPPROCESS = 2
+    INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize",              wintypes.DWORD),
+            ("cntUsage",            wintypes.DWORD),
+            ("th32ProcessID",       wintypes.DWORD),
+            ("th32DefaultHeapID",   ctypes.POINTER(wintypes.ULONG)),
+            ("th32ModuleID",        wintypes.DWORD),
+            ("cntThreads",          wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase",      wintypes.LONG),
+            ("dwFlags",             wintypes.DWORD),
+            ("szExeFile",           wintypes.WCHAR * 260),
+        ]
+
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if snap is not None and snap != INVALID_HANDLE_VALUE:
+        pe = PROCESSENTRY32W()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        if kernel32.Process32FirstW(snap, ctypes.byref(pe)):
+            while True:
+                exe_name = pe.szExeFile.lower()
+                if "astrbot" in exe_name and "launcher" in exe_name:
+                    pid = pe.th32ProcessID
+                    # QueryFullProcessImageNameW 获取完整路径
+                    PROCESS_QUERY_LIMITED_INFO = 0x1000
+                    hproc = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFO, False, pid)
+                    if hproc:
+                        buf = ctypes.create_unicode_buffer(260)
+                        size = wintypes.DWORD(260)
+                        # QueryFullProcessImageNameW
+                        if kernel32.QueryFullProcessImageNameW(hproc, 0, buf, ctypes.byref(size)):
+                            kernel32.CloseHandle(hproc)
+                            kernel32.CloseHandle(snap)
+                            return buf.value
+                        kernel32.CloseHandle(hproc)
+                if not kernel32.Process32NextW(snap, ctypes.byref(pe)):
+                    break
+        kernel32.CloseHandle(snap)
+
+    # 策略 B：检查默认安装位置
+    default_path = os.path.join(
+        os.environ.get("LOCALAPPDATA", ""),
+        "AstrBot Launcher",
+        "astrbot-launcher.exe",
+    )
+    if os.path.isfile(default_path):
+        return default_path
+
+    return None
+
+
+def _open_chat(web_chat_url: str):
+    """打开聊天界面：启动 astrbot-launcher.exe（单实例 Electron，再次启动 = 弹出现有窗口）。"""
+    launcher_exe = _find_launcher_exe()
+    if launcher_exe:
+        try:
+            logger.debug(f"启动 Launcher: {launcher_exe}")
+            subprocess.Popen(
+                [launcher_exe],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        except Exception as exc:
+            logger.warning(f"启动 Launcher 失败: {exc}")
+
+    # 回退：用浏览器打开 Web Chat
+    logger.debug(f"回退：浏览器打开 {web_chat_url}")
+    webbrowser.open(web_chat_url)
+
+
 def _create_tray(char_name: str, web_chat_url: str,
                  show_mini_fn, quit_fn) -> QSystemTrayIcon:
     """创建系统托盘图标和菜单。"""
@@ -85,7 +169,7 @@ def _create_tray(char_name: str, web_chat_url: str,
     tray_menu = QMenu()
 
     web_chat_action = QAction("💬 打开 Web Chat")
-    web_chat_action.triggered.connect(lambda: webbrowser.open(web_chat_url))
+    web_chat_action.triggered.connect(lambda: QTimer.singleShot(100, lambda: _open_chat(web_chat_url)))
     tray_menu.addAction(web_chat_action)
 
     show_mini_action = QAction("⭐ 显示悬浮窗")
@@ -102,7 +186,7 @@ def _create_tray(char_name: str, web_chat_url: str,
 
     def on_activate(reason):
         if reason == QSystemTrayIcon.DoubleClick:
-            webbrowser.open(web_chat_url)
+            QTimer.singleShot(100, lambda: _open_chat(web_chat_url))
 
     tray.activated.connect(on_activate)
     tray.show()
@@ -181,6 +265,7 @@ def main():
             )
 
     def _open_settings():
+        nonlocal char_name
         dialog = SettingsDialog(
             parent=None,
             char_name=char_name,
@@ -188,7 +273,6 @@ def main():
         )
         if dialog.exec_():
             new_name, new_folder = dialog.get_values()
-            nonlocal char_name
             char_name = new_name
             mini.set_char_name(new_name)
             mini.set_memory_folder(new_folder)
@@ -203,8 +287,10 @@ def main():
                 })
 
     # ── 信号连接 ──
-    # Phase 1: 点击星星 → 打开 Web Chat（Phase 3 改为展开 Live2D）
-    mini.clicked.connect(lambda: webbrowser.open(web_chat_url))
+    # Phase 1: 点击星星 / 右键「打开 Web Chat」→ 激活 Launcher 窗口（回退浏览器）
+    # 用 QTimer 延迟 100ms 确保右键菜单先关闭，避免 SetForegroundWindow 竞态
+    mini.clicked.connect(lambda: QTimer.singleShot(100, lambda: _open_chat(web_chat_url)))
+    mini.open_chat_requested.connect(lambda: QTimer.singleShot(100, lambda: _open_chat(web_chat_url)))
     mini.hide_requested.connect(mini.hide)
     mini.quit_requested.connect(_do_quit)
     mini.settings_requested.connect(_open_settings)

@@ -3,6 +3,7 @@ config.yaml
 session.json
 .desktop.lock
 memory.md
+*小本本.md
 
 # 用户图片
 *.jpg
