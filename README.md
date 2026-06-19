@@ -209,7 +209,7 @@ v0.7.0  06-20  开源！— 1650 行拆成 6 模块 + 修了个隐私漏洞
 |--------|--------|
 | 桌面悬浮窗 | Python 3.11+ / PyQt5 |
 | 消息框架 | AstrBot v4.16+ |
-| 大脑 | DeepSeek V4 |
+| 大脑 | 你的astrbot
 | 通信 | WebSocket JSON 帧 |
 | 记忆 | Markdown 文件 + session.json |
 
