@@ -218,6 +218,6 @@ v0.7.0  06-20  开源！— 1650 行拆成 6 模块 + 修了个隐私漏洞
 
 ## 📄
 
-MIT · 作者 [**鹓雏**](https://space.bilibili.com/621041105) · 代码在 [GitHub](https://github.com/yuanchu114514-spec/nexus-brain)
+MIT加密 · 作者 [**鹓雏**](https://space.bilibili.com/621041105) · 代码在 [GitHub](https://github.com/yuanchu114514-spec/nexus-brain)
 
 感谢 [AstrBot](https://github.com/Soulter/AstrBot) 和 DeepSeek ❤️
