@@ -1,7 +1,8 @@
 name: Nexus_brain
-desc: Nexus 桌面伴侣 — 集中式多平台 AI 大脑 + 四芒星悬浮窗桌宠，AstrBot Web Chat 为主力对话入口
+desc: Nexus 桌面伴侣 — Hub 集中式多平台 AI 大脑，FAISS 向量记忆 + 遗忘算法 + 置信度分级，四芒星悬浮窗
 author: 鹓雏
-version: 0.7.0
+version: 0.8.0
+repo: https://github.com/yuanchu114514-spec/nexus-brain
 support_platforms:
   - all
 astrbot_version: ">=4.16,<5"
