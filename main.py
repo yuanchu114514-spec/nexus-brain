@@ -86,9 +86,12 @@ class NexusBrain(Star):
             )
 
     async def initialize(self):
-        """启动 WS 服务 + 桌面 UI 子进程。"""
+        """启动 WS 服务 + 桌面 UI 子进程 + 向量记忆存储。"""
         self.ws.on_message(self._handle_ws_message)
         await self.ws.start()
+
+        # ── 初始化向量记忆存储（FAISS 语义检索）──
+        await self._init_vector_memory()
 
         if self.config.get("desktop", {}).get("enabled", True):
             # 预检 PyQt5 可用性（AstrBot 更新后 venv 重建可能丢失）
@@ -349,3 +352,30 @@ class NexusBrain(Star):
             logger.info(f"迷你窗口位置已保存: x={x}, y={y}")
         except Exception as e:
             logger.warning(f"保存迷你窗口位置失败: {e}")
+
+    async def _init_vector_memory(self) -> None:
+        """异步初始化向量记忆存储。
+
+        自动选择最佳嵌入方案（零配置）：
+          1. 本地 sentence-transformers 模型 (自动下载 ~96MB)
+          2. TF-IDF 文本匹配 (纯数学，无需下载)
+          3. 字符级编码 (终极降级)
+
+        无需配置任何外部 API 或 Provider。
+        """
+        if not self.brain.vector_store:
+            logger.debug("向量记忆存储未配置，跳过初始化")
+            return
+
+        try:
+            # embed_fn=None → 自动检测最佳方案
+            success = await self.brain.init_vector_store()
+            if success:
+                logger.info(
+                    f"向量记忆存储已初始化: "
+                    f"{self.brain.vector_store.count} 条记忆"
+                )
+            else:
+                logger.info("向量记忆存储初始化完成（降级模式：纯文本匹配）")
+        except Exception as e:
+            logger.warning(f"向量记忆存储初始化失败，降级为纯文本模式: {e}")

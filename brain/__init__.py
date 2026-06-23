@@ -1,11 +1,12 @@
 """统一大脑模块 — 安绪的 AI 核心（协调器）。
 
 将原 1650 行 brain.py 拆分为 6 个子模块：
-  session  — 消息存储 + 持久化
-  persona  — 人格 System Prompt
-  notebook — 小本本文件 I/O
-  memory   — 三层安全网记忆编排
-  llm      — LLM API 调用
+  session       — 消息存储 + 持久化
+  persona       — 人格 System Prompt
+  notebook      — 小本本文件 I/O
+  memory        — 三层安全网 + 向量存储 + 遗忘算法
+  llm           — LLM API 调用
+  vector_memory — FAISS 语义检索 (v0.8.0 新增)
 
 Brain 协调器只做 wiring，业务逻辑全部在子模块中。
 """
@@ -21,6 +22,7 @@ from .persona import SystemPrompt, DEFAULT_CHAR_NAME, DEFAULT_MASTER_NAME
 from .notebook import NotebookIO
 from .memory import MemoryManager
 from .llm import LLMClient
+from .vector_memory import VectorMemoryStore
 
 
 class Brain:
@@ -30,6 +32,8 @@ class Brain:
     所有平台和桌面端共用同一个 Brain 实例。
 
     向后兼容：公开 API 与旧 brain.py 完全一致。
+
+    v0.8.0: 新增向量记忆存储 (VectorMemoryStore) 支持语义检索。
     """
 
     def __init__(self, context, config: dict):
@@ -61,25 +65,57 @@ class Brain:
         # 2. 会话管理
         self._session = SessionManager()
 
-        # 3. 人格 System Prompt（含长期记忆）
+        # 3. 向量记忆存储（FAISS 语义检索）
+        self._vector_store: VectorMemoryStore | None = None
+        if self._memory_enabled and self._memory_folder:
+            vector_dir = Path(self._memory_folder) / ".vector_store"
+            self._vector_store = VectorMemoryStore(data_dir=vector_dir)
+
+        # 4. 人格 System Prompt（含长期记忆 + 语义检索）
         long_term_memory = self._notebook.load_memory()
         self._persona = SystemPrompt(
             char_name=self.char_name,
             master_name=self.master_name,
             long_term_memory=long_term_memory,
+            memory_manager=None,  # 稍后 set
         )
         self._system_prompt = self._persona.build()
 
-        # 4. LLM 客户端
+        # 5. LLM 客户端
         self._llm = LLMClient(context, self._session, self._persona)
 
-        # 5. 记忆管理器（依赖以上全部）
+        # 6. 记忆管理器（依赖以上全部 + vector_store）
         self._memory = MemoryManager(
-            self._session, self._notebook, self._persona, self._llm
+            self._session, self._notebook, self._persona, self._llm,
+            vector_store=self._vector_store
         )
+
+        # 回注: persona 的 memory_manager（用于语义检索）
+        self._persona._memory_manager = self._memory
 
         # ── 向后兼容: _long_term_memory 属性 ──
         self._provider_id = ""  # 由 LLMClient 管理，保留引用兼容
+
+    # ═══════════════════════════════════════════════════════════
+    # 向量存储 API (v0.8.0)
+    # ═══════════════════════════════════════════════════════════
+
+    async def init_vector_store(self, embedding_fn=None) -> bool:
+        """异步初始化向量存储（自动检测最佳嵌入方案）。
+
+        无需传入 embedding_fn，VectorMemoryStore 内部自动选择:
+          1. 本地 sentence-transformers 模型
+          2. TF-IDF 文本匹配
+          3. 字符级编码
+        """
+        if self._vector_store:
+            await self._vector_store.initialize(embedding_fn)
+            return self._vector_store.is_available
+        return False
+
+    @property
+    def vector_store(self):
+        return self._vector_store
 
     # ═══════════════════════════════════════════════════════════
     # 公开属性（向后兼容）

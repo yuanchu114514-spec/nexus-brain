@@ -1,16 +1,22 @@
-"""记忆自动同步 — 三层安全网 + 重要性评分 + 语义去重 + 定期整理。
+"""记忆自动同步 — 三层安全网 + 向量存储 + 遗忘算法 + 置信度分级。
 
 从 brain.py 拆出：所有记忆提取、评分、去重、整理逻辑集中于此模块。
-依赖 SessionManager、NotebookIO、SystemPrompt、LLMClient。
+依赖 SessionManager、NotebookIO、SystemPrompt、LLMClient、VectorMemoryStore。
+
+v0.8.0 新增:
+  - VectorMemoryStore: FAISS 语义检索替代全量注入
+  - 遗忘评分算法: 加权评分替代纯时间裁剪
+  - 置信度分级: high/medium/low 三级区分
 """
 
 from __future__ import annotations
 
+import math
 import re
 from collections import deque
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
-from typing import Any
+from typing import Any, Optional
 
 from astrbot.api import logger
 
@@ -48,19 +54,20 @@ HIGH_IMPORTANCE_PATTERNS = [
 
 
 class MemoryManager:
-    """三层安全网记忆系统编排器。
+    """三层安全网 + 向量存储 + 遗忘算法的记忆系统编排器。
 
     Tier 1 — 增量检查点：每 CHECKPOINT_INTERVAL 轮追加原始摘要到小本本
-    Tier 2 — LLM 深度提取：智能触发（空闲 + 压力 + 兜底）
+    Tier 2 — LLM 深度提取：智能触发（空闲 + 压力 + 兜底），双写 .md + FAISS
     Tier 2.5 — 定期记忆整理：每 N 次 Tier 2 后合并碎片
     Tier 3 — 紧急保存：terminate 时 dump 未同步消息
     """
 
-    def __init__(self, session, notebook, persona, llm):
+    def __init__(self, session, notebook, persona, llm, vector_store=None):
         self.session = session
         self.notebook = notebook
         self.persona = persona
         self.llm = llm
+        self.vector_store = vector_store  # VectorMemoryStore | None
 
         # ── 同步状态 ──
         self._last_synced_turn: int = 0
@@ -73,11 +80,17 @@ class MemoryManager:
         self._memory_id_counter: int = 0
         self._llm_extraction_count: int = 0
 
+        # ── 遗忘维护状态 ──
+        self._last_forgetting_maintenance: float = 0.0  # timestamp
+
         # 从已有记忆中恢复 ID 计数器
         self._init_memory_id_counter()
 
         # 启动时合并上次异常退出遗留的紧急保存
         self._merge_emergency_on_startup()
+
+        # 从小本本同步已有记忆到向量存储
+        self._sync_notebook_to_vector()
 
     # ── 属性 ──
 
@@ -187,7 +200,7 @@ class MemoryManager:
             merge_text = parts["merge"]
 
             if general_text:
-                self._write_auto_memories(general_text)
+                await self._write_auto_memories(general_text)
                 logger.info(
                     f"Tier 2 一般记忆: {len(general_text)} 字符 → AUTO-MEMORY"
                 )
@@ -235,8 +248,9 @@ class MemoryManager:
                 except Exception as e:
                     logger.warning(f"Tier 2.5 记忆整理失败（非致命）: {e}")
 
-            # ── 定期维护 ──
+            # ── 定期维护（含遗忘算法淘汰）──
             self.notebook.run_maintenance()
+            self._run_forgetting_maintenance()
         finally:
             self._syncing = False
 
@@ -455,8 +469,11 @@ class MemoryManager:
 
     # ── 记忆写入 ──
 
-    def _write_auto_memories(self, text: str) -> None:
-        """将提取的记忆写入小本本 AUTO-MEMORY 区块（含语义去重 + ID）。"""
+    async def _write_auto_memories(self, text: str) -> None:
+        """将提取的记忆双写：.md AUTO-MEMORY 段 + FAISS 向量存储。
+
+        含语义去重 + ID + 置信度解析。
+        """
         if not self.notebook.enabled or self.notebook.path is None:
             logger.debug("记忆系统未启用，跳过 AUTO-MEMORY 写入")
             return
@@ -481,7 +498,7 @@ class MemoryManager:
                 )
                 self.notebook.path.write_text(content, encoding="utf-8")
 
-        # 语义去重
+        # 语义去重（同时检查 .md 和向量存储）
         existing_memories = self.notebook.read_section(
             AUTO_MEMORY_START, AUTO_MEMORY_END
         )
@@ -514,10 +531,62 @@ class MemoryManager:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         memory_block = f"\n<!-- {timestamp} -->\n{id_text}\n"
 
+        # ── 写入 .md 文件 ──
         self.notebook.write_section(
             AUTO_MEMORY_START, AUTO_MEMORY_END, memory_block, mode="append"
         )
         logger.info(f"记忆已写入小本本: {self.notebook.path}")
+
+        # ── 写入向量存储 ──
+        if self.vector_store and self.vector_store.is_available:
+            await self._write_to_vector_store(filtered_bullets)
+
+    async def _write_to_vector_store(self, bullets: list[str]) -> None:
+        """将记忆条目写入 FAISS 向量存储（含置信度解析）。"""
+        if not self.vector_store:
+            return
+
+        added = 0
+        for bullet in bullets:
+            # 解析置信度标签: [HIGH] / [MEDIUM] / [LOW] / 无标签
+            content = bullet
+            confidence = 0.7  # 默认中等置信度
+
+            for tag, score in [("[HIGH]", 0.90), ("[MEDIUM]", 0.70), ("[LOW]", 0.40)]:
+                if tag in content:
+                    content = content.replace(tag, "").strip()
+                    confidence = score
+                    break
+
+            # 去除前导 "- " 和记忆 ID
+            content = re.sub(r'^- \[mem-\d{8}-\d{3}\]\s*', '', content).strip()
+            content = re.sub(r'^- ', '', content).strip()
+
+            if not content:
+                continue
+
+            try:
+                await self.vector_store.add_memory(
+                    content,
+                    metadata={"confidence": confidence, "source": "extraction"}
+                )
+                added += 1
+            except Exception as e:
+                logger.debug(f"向量写入失败: {e}")
+
+        if added > 0:
+            logger.info(f"向量存储: {added} 条记忆已写入")
+
+    def _sync_notebook_to_vector(self) -> None:
+        """启动时从 .md AUTO-MEMORY 同步已有记忆到向量存储。"""
+        if not self.vector_store or not self.notebook.enabled:
+            return
+
+        existing = self.notebook.read_section(AUTO_MEMORY_START, AUTO_MEMORY_END)
+        if existing.strip():
+            added = self.vector_store.sync_from_notebook(existing)
+            if added > 0:
+                logger.info(f"启动同步: {added} 条记忆从小本本 → 向量存储")
 
     # ── 提取结果解析 ──
 
@@ -715,6 +784,13 @@ class MemoryManager:
             "  🤖 AUTO 标记：如果你**非常确信**某条事实是对已有段落的明确更新，"
             "用「- [段落名] [AUTO] 事实」格式\n"
             "6. 如果本轮对话没有任何新增内容，只回复「无」\n\n"
+            "📋 置信度标签（新增！每条记忆必须标注置信度）：\n"
+            "- 在每个 bullet 开头加上置信度标签：\n"
+            "  [HIGH] = 主人明确陈述的事实（如「主人说他的考研目标是南邮」）\n"
+            "  [MEDIUM] = 合理推断或一般性信息（如「主人似乎最近比较喜欢喝咖啡」）\n"
+            "  [LOW] = 模糊或推测性信息（如「主人可能对XX有点兴趣」）\n"
+            "- 示例: \"- [HIGH] 主人说他的考研目标是南邮\"\n"
+            "- 示例: \"- [MEDIUM] 主人最近经常提到想学 Rust\"\n\n"
             "📋 记忆粒度要求：\n"
             "1. 保留具体的数字、日期、地名、人名\n"
             "2. 保留情感线索\n"
@@ -725,6 +801,163 @@ class MemoryManager:
         )
 
         return await self.llm.extract_memories(extraction_prompt)
+
+    # ── 遗忘算法维护 ──
+
+    def _run_forgetting_maintenance(self) -> None:
+        """基于遗忘算法的记忆维护（替代纯时间裁剪）。
+
+        每 6 小时运行一次：
+        1. 计算所有向量记忆中遗忘评分最低的条目
+        2. 评分 < 阈值的候选淘汰
+        3. 同步清理 .md 和向量存储
+        """
+        if not self.vector_store or not self.vector_store.is_available:
+            return
+
+        now = datetime.now(timezone.utc).timestamp()
+        if now - self._last_forgetting_maintenance < 21600:  # 6 小时
+            return
+        self._last_forgetting_maintenance = now
+
+        # 获取候选淘汰
+        candidates = self.vector_store.get_eviction_candidates(
+            max_entries=AUTO_MEMORY_MAX_BULLETS,
+            retention_days=30,
+        )
+
+        if not candidates:
+            logger.debug("遗忘维护: 无候选淘汰记忆")
+            return
+
+        # 最多淘汰 10 条/次，避免一次清理过多
+        max_evict = min(10, len(candidates))
+        to_evict = candidates[:max_evict]
+
+        logger.info(
+            f"遗忘维护: {len(candidates)} 条候选, 本次淘汰 {max_evict} 条"
+        )
+
+        # 从向量存储中删除
+        evicted_ids = []
+        for entry, score in to_evict:
+            self.vector_store.remove_entry(entry.id)
+            evicted_ids.append(entry.id)
+            logger.info(
+                f"遗忘淘汰: [{entry.id}] (评分 {score:.3f}, "
+                f"置信度 {entry.confidence:.2f}, "
+                f"最后访问 {entry.days_since_access:.0f} 天前) "
+                f"\"{entry.content[:60]}...\""
+            )
+
+        # 从 .md 文件中删除对应条目
+        if evicted_ids and self.notebook.enabled:
+            self._remove_from_notebook(evicted_ids)
+
+        # 标记索引需要重建
+        if evicted_ids:
+            self.vector_store.rebuild_index_from_entries()
+
+    def _remove_from_notebook(self, mem_ids: list[str]) -> None:
+        """从小本本 AUTO-MEMORY 段中移除指定 ID 的记忆条目。"""
+        section = self.notebook.read_section(AUTO_MEMORY_START, AUTO_MEMORY_END)
+        if not section.strip():
+            return
+
+        id_set = set(mem_ids)
+        lines = section.split("\n")
+        kept_lines = []
+        removed = 0
+
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("- "):
+                # 检查是否包含要删除的 ID
+                should_remove = any(mid in stripped for mid in id_set)
+                if should_remove:
+                    removed += 1
+                    continue
+            kept_lines.append(line)
+
+        if removed > 0:
+            new_section = "\n".join(kept_lines)
+            self.notebook.write_section(
+                AUTO_MEMORY_START, AUTO_MEMORY_END,
+                new_section.strip(), mode="replace"
+            )
+            logger.info(f"从小本本移除 {removed} 条已被遗忘的记忆")
+
+    # ── 语义检索（供 persona 使用）──
+
+    async def retrieve_relevant_memories(
+        self, query: str, top_k: int = 10
+    ) -> list[str]:
+        """语义检索与当前查询最相关的记忆文本。
+
+        用于替换全量注入 System Prompt 的模式。
+
+        Args:
+            query: 当前用户消息或上下文摘要
+            top_k: 返回结果数
+
+        Returns:
+            相关记忆的文本列表
+        """
+        if not self.vector_store or not self.vector_store.is_available:
+            # 降级: 返回最近的记忆（旧行为）
+            return self._get_recent_memory_texts(top_k)
+
+        try:
+            results = await self.vector_store.search(query, top_k=top_k, min_score=0.2)
+            return [entry.content for entry, score in results]
+        except Exception as e:
+            logger.warning(f"语义检索失败，降级为最近记忆: {e}")
+            return self._get_recent_memory_texts(top_k)
+
+    def _get_recent_memory_texts(self, count: int) -> list[str]:
+        """降级方案: 获取最近的记忆文本（按时间排序）。"""
+        if not self.vector_store:
+            return []
+        entries = sorted(
+            self.vector_store.get_all_entries(),
+            key=lambda e: e.timestamp,
+            reverse=True,
+        )
+        return [e.content for e in entries[:count]]
+
+    # ── 记忆统计 ──
+
+    def get_memory_stats(self) -> dict[str, Any]:
+        """获取记忆系统统计信息。"""
+        stats = {
+            "total_bullets": 0,
+            "total_chars": 0,
+            "high_confidence": 0,
+            "medium_confidence": 0,
+            "low_confidence": 0,
+            "vector_store_count": 0,
+            "vector_store_available": False,
+        }
+
+        if self.notebook.enabled:
+            section = self.notebook.read_section(AUTO_MEMORY_START, AUTO_MEMORY_END)
+            bullets = [l for l in section.split("\n") if l.strip().startswith("- ")]
+            stats["total_bullets"] = len(bullets)
+            stats["total_chars"] = len(section)
+
+            for b in bullets:
+                if "[HIGH]" in b:
+                    stats["high_confidence"] += 1
+                elif "[LOW]" in b:
+                    stats["low_confidence"] += 1
+                else:
+                    stats["medium_confidence"] += 1
+
+        if self.vector_store:
+            stats["vector_store_count"] = self.vector_store.count
+            stats["vector_store_available"] = self.vector_store.is_available
+
+        return stats
 
     # ── 启动时合并紧急保存 ──
 

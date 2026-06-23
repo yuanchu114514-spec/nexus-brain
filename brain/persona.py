@@ -1,16 +1,23 @@
-"""人格 System Prompt — 构建 + 本地环境注入。
+"""人格 System Prompt — 构建 + 本地环境注入 + 语义记忆检索。
 
 从 brain.py 拆出：所有 prompt 相关逻辑集中于此模块。
 不依赖 AstrBot context。
+
+v0.8.0: 支持语义检索注入（按相关性而非全量注入长期记忆）。
 """
 
 from __future__ import annotations
 
 import platform
 from datetime import datetime, timezone
+from typing import Optional
 
 DEFAULT_CHAR_NAME = "Nexus"
 DEFAULT_MASTER_NAME = "User"
+
+# System Prompt 记忆注入 token 预算
+MAX_MEMORY_TOKENS = 2000
+CHARS_PER_TOKEN_ESTIMATE = 2.5  # 中英文混合估计
 
 
 class SystemPrompt:
@@ -18,21 +25,30 @@ class SystemPrompt:
 
     生成包含长期记忆的完整 system prompt。
     支持本地环境提示注入（让 LLM 知道它可以操控主人的电脑）。
+
+    v0.8.0: 支持语义检索模式 — 传入 memory_manager 后，
+    按当前上下文语义检索最相关的记忆，而非全量注入。
     """
 
     def __init__(self,
                  char_name: str = DEFAULT_CHAR_NAME,
                  master_name: str = DEFAULT_MASTER_NAME,
-                 long_term_memory: str = ""):
+                 long_term_memory: str = "",
+                 memory_manager=None):
         self.char_name = char_name
         self.master_name = master_name
-        self.long_term_memory = long_term_memory  # 从小本本加载的全文
+        self.long_term_memory = long_term_memory  # 从小本本加载的全文（降级用）
+        self._memory_manager = memory_manager  # MemoryManager | None
         self._cache: str = ""
 
     # ── 公开 API ──
 
-    def build(self) -> str:
-        """构建完整的 System Prompt（含长期记忆）。"""
+    def build(self, current_query: str = "") -> str:
+        """构建完整的 System Prompt（含长期记忆）。
+
+        Args:
+            current_query: 当前用户消息。非空时尝试语义检索相关记忆。
+        """
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         prompt = (
             f"你是{self.char_name}，一个友好的 AI 桌面伴侣，"
@@ -58,6 +74,42 @@ class SystemPrompt:
 
         self._cache = prompt
         return prompt
+
+    async def build_async(self, current_query: str = "") -> str:
+        """异步构建 System Prompt（支持语义检索）。
+
+        如果 memory_manager 可用 + 记忆量适中 + 有查询，
+        则用语义检索 top-K 相关记忆替代全量注入。
+        """
+        if self._memory_manager and current_query:
+            try:
+                relevant = await self._memory_manager.retrieve_relevant_memories(
+                    current_query, top_k=10
+                )
+                if relevant:
+                    # 控制 token 预算
+                    trimmed = self._trim_to_token_budget(relevant)
+                    self.long_term_memory = (
+                        "（以下是与当前对话最相关的记忆）\n"
+                        + "\n".join(f"- {m}" for m in trimmed)
+                    )
+                    return self.build(current_query)
+            except Exception:
+                pass  # 降级用全量记忆
+
+        return self.build(current_query)
+
+    def _trim_to_token_budget(self, memories: list[str]) -> list[str]:
+        """按 token 预算裁剪记忆列表。"""
+        max_chars = int(MAX_MEMORY_TOKENS * CHARS_PER_TOKEN_ESTIMATE)
+        result = []
+        total = 0
+        for mem in memories:
+            if total + len(mem) > max_chars:
+                break
+            result.append(mem)
+            total += len(mem)
+        return result
 
     def inject_local_env(self) -> str:
         """向 system prompt 追加本地环境提示。
