@@ -1,4 +1,4 @@
-# 🧠 Nexus — 安绪 AI 大脑
+# 🧠 Nexus —AstrBot AI 大脑
 
 > AstrBot 插件，集中式多平台 AI 大脑。跨 QQ / 微信 / 飞书 / Web Chat 共享对话记忆。
 
