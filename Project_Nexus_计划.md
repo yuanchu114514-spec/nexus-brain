@@ -1292,7 +1292,7 @@ Tier 2 LLM 提取 prompt 新增要求:
 
 ### 2026-06-15
 
-- **🎯 v0.4.0 架构重设计**：Hub 集中式多平台大脑 + 悬浮窗桌宠。项目文件整合到 `安绪_Nexus/`。
+- **🎯 v0.4.0 架构重设计**：Hub 集中式多平台大脑 + 悬浮窗。项目文件整合到 `安绪_Nexus/`。
 - **长期记忆系统 + 自动同步**：`_load_long_term_memory()` + `after_turn()` + `_extract_memories()` + `_write_auto_memories()`。
 - **修复 QQ 端工具调用失效**：System Prompt 注入工具指令 + LLM「云端 AI」幻觉修复。
 - **修复 Web Chat 工具调用 Permission denied**：`event.role = "admin"`。
