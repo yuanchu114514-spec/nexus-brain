@@ -259,7 +259,8 @@ pip install sentence-transformers
 
 ## 🙏 致谢
 
-记忆系统 v0.8.0 的设计参考了 [Iris Chat Memory](https://github.com/leafliber/astrbot_plugin_iris_chat_memory) — Smart 3 tier long term memory, completed memory circle. 遗忘算法、置信度分级和 FAISS 检索的架构思路受到 Iris 三层记忆模型的启发。感谢 Leafliber 的开源贡献！
+- **[AstrBot](https://github.com/AstrBotDevs/AstrBot)** — 本项目基于 AstrBot 插件框架构建。AstrBot 提供了完整的消息平台接入、LLM 调用管线、工具调用（function calling）和插件生命周期管理，Nexus 的 Hub 集中式架构和卫星 Bot 转发机制深度依赖 AstrBot 的 Provider 抽象和多平台适配层。感谢 AstrBot 团队的开源贡献！
+- **[Iris Chat Memory](https://github.com/leafliber/astrbot_plugin_iris_chat_memory)** — 记忆系统 v0.8.0 的设计参考了 Iris 的三层记忆架构、遗忘评分算法和置信度分级机制。感谢 Leafliber 的开源贡献！
 
 ---
 
