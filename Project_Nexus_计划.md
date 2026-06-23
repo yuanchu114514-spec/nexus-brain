@@ -1,8 +1,8 @@
-# Project：Nexus — 安绪桌面伴侣
+# Project：Nexus — 安绪 AI 大脑
 
 > **一句话**: AstrBot 插件，让安绪拥有统一 AI 大脑，跨 QQ/微信/飞书/WebChat 共享对话记忆。
 >
-> **当前**: Nexus_brain v0.8.0-dev (向量记忆 ✅) + Nexus_Desktop (桌宠身体 🆕 待开工)
+> **当前**: Nexus_brain v0.8.0-dev (向量记忆 ✅)
 >
 > **总体进度**: █████████████████░░░ 92%
 
@@ -34,17 +34,20 @@
 
 ```mermaid
 mindmap
-  root(("🌟 Nexus<br/>安绪桌面伴侣"))
-    (("🧠 Nexus_brain<br/>Hub 大脑 ✅"))
+  root(("🧠 Nexus<br/>AI 大脑"))
+    (("Nexus_brain<br/>Hub 大脑 ✅"))
       [Brain 统一大脑]
         SystemPrompt 人格构建
         SessionManager 消息存储
         LLMClient DeepSeek V4 调用
-      [记忆系统 三层安全网]
+      [记忆系统]
         Tier 1 增量检查点 &lt;50ms
         Tier 2 LLM 深度提取 ~3s
         Tier 2.5 定期碎片整理
         Tier 3 紧急保存 &lt;100ms
+        FAISS 语义检索
+        遗忘评分算法
+        置信度分级
       [消息路由 多平台统一]
         Web Chat 主力入口
         QQ Bot 卫星转发
@@ -60,26 +63,14 @@ mindmap
         CHECKPOINT 增量检查点
         EMERGENCY 崩溃紧急保存
         AI-MERGE 建议合并待审核
-      [代码架构 v0.7.0-dev]
+      [代码架构 v0.8.0-dev]
         brain/__init__.py 协调器
         brain/session.py 消息存储
         brain/persona.py 人格Prompt
         brain/notebook.py 小本本I/O
         brain/memory.py 记忆编排
+        brain/vector_memory.py 向量存储
         brain/llm.py LLM客户端
-    (("🎭 Nexus_Desktop<br/>桌宠身体 🆕"))
-      [Phase A 灵魂注入]
-        Live2D Cubism SDK 渲染
-        表演引擎 expression/motion
-        TTS GPT-SoVITS 语音合成
-      [Phase B 感官觉醒]
-        截屏采集 mss+Pillow
-        VLM Qwen2-VL 视觉感知
-        主动搭话引擎 nudge
-      [Phase C 打磨交付]
-        流式逐字显示 streaming
-        连接状态呼吸灯 indicator
-        打包脚本 开机启动
     (("🖥️ 桌面悬浮窗"))
       56×56 纯白四芒星 QPainter
       悬停 ±4° 旋转动画
@@ -92,13 +83,13 @@ flowchart TB
     subgraph HubBox["━━━━━━ Hub 实例 · 主人 Windows 电脑 ━━━━━━"]
         subgraph AstrBot["AstrBot 主进程"]
             Main["main.py<br/>插件入口 · 消息路由"]
-            BrainPkg["brain/ 包 (6 模块 1798 行)<br/>━━━━━━━━━━━━━━━<br/>SessionManager · SystemPrompt<br/>NotebookIO · MemoryManager · LLMClient"]
+            BrainPkg["brain/ 包 (7 模块)<br/>━━━━━━━━━━━━━━━<br/>session · persona · notebook<br/>memory · vector_memory · llm"]
             WSSrv["ws_server.py :8999<br/>client_type 区分 · broadcast"]
             DeskMgr["desktop_manager.py<br/>子进程 spawn/kill · .desktop.lock"]
             HubAPI["hub_api.py<br/>HTTP 健康检查 · 降级转发"]
         end
 
-        subgraph PyQt5["桌面子进程 pythonw.exe"]
+        subgraph PyQt5["悬浮窗 pythonw.exe"]
             DeskMain["desktop/main.py<br/>托盘 · 信号线"]
             MiniWin["mini_window.py<br/>56×56 纯白四芒星"]
             SettingsDlg["settings_dialog.py<br/>角色名 · 记忆文件夹"]
@@ -132,8 +123,8 @@ flowchart TB
 ```
 
 ```text
-                               🌟 Nexus — 安绪桌面伴侣
-                              ═══════════════════════════════
+                              🧠 Nexus — 安绪 AI 大脑
+                              ══════════════════════════
 
   ┌─────────────────────────────────────────────────────────────────────────────┐
   │                    🖥️ 主人 Windows 电脑 — Hub 实例                          │
@@ -142,13 +133,14 @@ flowchart TB
   │  │                    AstrBot 主进程                                     │ │
   │  │                                                                       │ │
   │  │  ┌──────────────────────────┐  ┌──────────────────────────────────┐  │ │
-  │  │  │   main.py (插件入口)      │  │   brain/ 包 (6 模块 · 1798 行)   │  │ │
+  │  │  │   main.py (插件入口)      │  │   brain/ 包 (7 模块)              │  │ │
   │  │  │                          │  │                                  │  │ │
   │  │  │  · 消息路由              │  │  __init__  Brain 协调器          │  │ │
   │  │  │  · 配置持久化            │  │  session   消息存储 · 持久化     │  │ │
   │  │  │  · WS 消息分发           │  │  persona   人格 Prompt           │  │ │
   │  │  │  · 子进程启停            │  │  notebook  小本本 I/O            │  │ │
   │  │  └──────────┬───────────────┘  │  memory    三层安全网 · 提取     │  │ │
+  │  │             │                  │  vector_mem FAISS 语义检索       │  │ │
   │  │             │                  │  llm       LLM 调用 · provider   │  │ │
   │  │             │                  └──────────────────────────────────┘  │ │
   │  │  ┌──────────┴───────────────────────────────────────────────────┐    │ │
@@ -161,7 +153,7 @@ flowchart TB
   │  └─────────────────────────┼──────────────────────────────────────────────┘ │
   │                            │                                                │
   │  ┌─────────────────────────┼──────────────────────────────────────────┐    │
-  │  │             桌面子进程  │  pythonw.exe (无黑窗)                      │    │
+  │  │             悬浮窗      │  pythonw.exe (无黑窗)                      │    │
   │  │                         │                                          │    │
   │  │  ┌──────────────────────┴──────────────────────────────────┐      │    │
   │  │  │              desktop/main.py (托盘 · 信号线)             │      │    │
@@ -197,13 +189,6 @@ flowchart TB
               ┌────────────────┐
               │ Hub :8999/nexus│
               └────────────────┘
-
-  ═════════════════════════════════════════════════════════════════════
-  🆕 Nexus_Desktop (独立插件 · 待开工)
-  ═════════════════════════════════════════════════════════════════════
-  Phase A 灵魂注入  │  Live2D Cubism · 表演引擎 · TTS 语音
-  Phase B 感官觉醒  │  截屏 mss · VLM 视觉 · 主动搭话
-  Phase C 打磨交付  │  流式显示 · 呼吸灯 · 打包启动
 ```
 
 ---
@@ -1029,7 +1014,7 @@ sequenceDiagram
 
 ## 11. 桌面端
 
-桌面端是 PyQt5 子进程（pythonw.exe，无黑窗），由 DesktopManager 管理生命周期。当前只实现了 Layer 1（迷你悬浮窗），Layer 2/3 迁至 Nexus_Desktop。
+桌面端是 PyQt5 子进程（pythonw.exe，无黑窗），由 DesktopManager 管理生命周期。实现了迷你悬浮窗（56×56 四芒星）、个性化设置、系统托盘等功能。
 
 ```mermaid
 flowchart TB
@@ -1132,8 +1117,6 @@ timeline
               : 心跳 ping/pong + 指数退避
               : v0.7.0-dev 代码重构
               : brain.py→brain/ 6模块拆分
-              : Nexus_Desktop 拆分
-              : Phase 3/4/5 迁出为独立插件
     2026-06-23 : v0.8.0-dev 向量记忆
               : FAISS 语义检索 + 遗忘算法 + 置信度分级
 ```
@@ -1143,7 +1126,6 @@ timeline
 
 ```
 Nexus_brain 进度  ████████████████████ 100%  ← Hub 大脑 v0.8.0 ✅
-Nexus_Desktop      ░░░░░░░░░░░░░░░░░░░░   0%  ← 新插件待开工
 ═══════════════════════════════════════════════
 总体               █████████████████░░░  92%
 ```
@@ -1300,7 +1282,7 @@ Tier 2 LLM 提取 prompt 新增要求:
 - **🔧 悬浮窗打开 Web Chat 改为激活 Launcher**：`subprocess.Popen` 启动 `astrbot-launcher.exe`，Electron 单实例锁自动弹到前台。净减 ~40 行。
 - **🌐 v0.6.0 开源准备**：悬浮窗 56×56 纯白四芒星 + 个性化设置 + 插件改名 + 记忆参数化 + 隐私保护。14 文件修改，3 新文件，~500 行。
 - **🧠 v0.5.1 记忆质量优化（四阶段完成）**：Phase A 去重+版本化+RAG追溯、Phase B 重要性评分+分级截断、Phase C 定期整理+语义去重、Phase D AUTO-MERGE。brain.py 净增 ~200 行。
-- **🔀 Nexus_Desktop 拆分**：Phase 3/4/5 迁出为独立插件。
+- **🔀 代码重构收尾**：brain/ 6 模块拆分完成，公开 API 兼容性验证。
 - **🔧 brain.py→brain/ 代码重构**：1650 行拆为 6 模块。
 
 ### 2026-06-17
@@ -1310,7 +1292,7 @@ Tier 2 LLM 提取 prompt 新增要求:
 
 ### 2026-06-15
 
-- **🎯 v0.4.0 架构重设计**：Hub 集中式多平台大脑 + 表演层桌宠。项目文件整合到 `安绪_Nexus/`。
+- **🎯 v0.4.0 架构重设计**：Hub 集中式多平台大脑 + 悬浮窗桌宠。项目文件整合到 `安绪_Nexus/`。
 - **长期记忆系统 + 自动同步**：`_load_long_term_memory()` + `after_turn()` + `_extract_memories()` + `_write_auto_memories()`。
 - **修复 QQ 端工具调用失效**：System Prompt 注入工具指令 + LLM「云端 AI」幻觉修复。
 - **修复 Web Chat 工具调用 Permission denied**：`event.role = "admin"`。
